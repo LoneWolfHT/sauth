@@ -2,7 +2,7 @@
 [![Build status](https://github.com/shivajiva101/sauth/workflows/Check%20&%20Release/badge.svg)](https://github.com/shivajiva101/sauth/actions)
 [![License: MIT](https://img.shields.io/badge/License-MIT-yellow.svg)](https://opensource.org/licenses/MIT)
 
-<b>IMPORTANT: Version 2 changes the DB schema inline with the core auth schema. Existing users need to convert sauth.sqlite using the python script in sauth/tools(see instructions.txt). ONLY USE with minetest version 0.5 or greater.</b>
+<b>IMPORTANT: Version 2 changes the DB schema inline with the core auth schema. The existing sauth.sqlite will be converted so make a backup! ONLY USE with minetest version 0.5 or greater.</b>
 
 Sauth is an alternative sqlite3 auth handler for minetest. Capable of handling large player databases and provides mitigation of auth entry request load by use of memory caching. Fine tune your servers auth memory load by caching clients who play regularly to reduce join event load on the server, resulting in a better playability experience on servers with many player accounts.
 
