@@ -35,7 +35,25 @@ and singleplayer then
 	  return
 end
 
-local db = _sql.open(WP.."/sauth.sqlite") -- connection
+-- check if sauth.sqlite is present
+local file1_exists = io.open(WP.."/sauth.sqlite", "r") ~= nil
+local file2_exists = io.open(WP.."/auth.sqlite", "r") ~= nil
+local update = false
+
+if file1_exists then
+	local ok, msg
+	update = true
+	-- Fix file names
+	if file2_exists then
+		ok, msg = ie.os.rename(WP.."/auth.sqlite", WP.."/auth.sqlite.bak")
+		if not ok then minetest.log('error', msg) end
+	end
+	ok, msg = ie.os.rename(WP.."/sauth.sqlite", WP.."/auth.sqlite")
+	if not ok then minetest.log('error', msg) end
+
+end
+
+local db = _sql.open(WP.."/auth.sqlite") -- connection
 
 --- Apply statements against the current database
 --- wrapping db:exec for error reporting
@@ -49,6 +67,89 @@ local function db_exec(stmt)
 	end
 	return true
 end
+
+-- Alter table name, create new tables & copy data over
+-- parsing player privileges to new format and clean up
+local function updater()
+
+	minetest.log('action', "Updating sauth db...")
+
+	local stmt = "ALTER TABLE auth RENAME TO auth_tmp;"
+	db_exec(stmt)
+
+	stmt = ([[
+		CREATE TABLE IF NOT EXISTS auth (
+		id INTEGER PRIMARY KEY AUTOINCREMENT,
+		name VARCHAR(32) UNIQUE,
+		password VARCHAR(512),
+		last_login INTEGER);
+		CREATE TABLE IF NOT EXISTS user_privileges (
+		id INTEGER,
+		privilege VARCHAR(32),
+		PRIMARY KEY (id, privilege) CONSTRAINT fk_id FOREIGN KEY (id)
+		REFERENCES auth (id) ON DELETE CASCADE);
+	]])
+	db_exec(stmt)
+
+	stmt = ([[
+		DELETE FROM auth_tmp WHERE id IN (SELECT id FROM auth_tmp GROUP BY name HAVING COUNT(*)>1);
+		INSERT INTO auth SELECT id, name, password, last_login FROM auth_tmp;
+	]])
+	db_exec(stmt)
+
+	local data, privs = {}
+	stmt = "SELECT id, privileges FROM auth_tmp;"
+	for row in db:nrows(stmt) do
+		data[#data+1] = row
+	end
+
+	local sb = {}
+	local hdr = true
+	local ftr = false
+	local s, msg
+
+	for i = 1, #data do
+		if hdr then
+			sb[#sb+1] = "PRAGMA foreign_keys = OFF;"
+			sb[#sb+1] = "BEGIN TRANSACTION;"
+			hdr = false
+		end
+		if ftr then
+			sb[#sb+1] = "COMMIT;"
+			sb[#sb+1] = "PRAGMA foreign_keys = ON;"
+			stmt = table.concat(sb, "\n")
+			db_exec(stmt)
+			sb = {}
+			ftr = false
+			hdr = true
+		end
+		local id = data[i].id
+		local privs = minetest.string_to_privs(data[i].privileges)
+		for priv, _ in pairs(privs) do
+			if priv then
+				sb[#sb+1] = ("INSERT INTO user_privileges (id, privilege) VALUES (%i, '%s');"):format(id, priv)
+			end
+		end
+		if #sb > 1000 then
+			ftr = true
+		end			
+	end
+	-- check for zero sb length!
+	if #sb > 0 then
+		sb[#sb+1] = "DROP TABLE auth_tmp;"
+		sb[#sb+1] = "DROP TABLE _s;"
+		sb[#sb+1] = "COMMIT;"
+		sb[#sb+1] = "PRAGMA foreign_keys = ON;"
+		sb[#sb+1] = "VACUUM;"
+	else
+		sb[#sb+1] = "VACUUM;"
+	end
+	stmt = table.concat(sb, "\n")
+	db_exec(stmt)
+	minetest.log('action', "sauth db was converted and renamed to minetest auth.sqlite!")
+end
+-- Update database check
+if update then updater() end
 
 -- Cache handling
 local cap = 0
@@ -98,6 +199,13 @@ local function trim_cache()
 	cap = cap - 1
 end
 
+--- Sanitises the string param
+---@param str string
+---@return sanitised string
+local function sanitize(str)
+	return str:gsub('[%p%c%s]', '')
+end
+
 -- Define db tables
 local create_db = [[
 CREATE TABLE IF NOT EXISTS auth (
@@ -114,6 +222,7 @@ CREATE TABLE IF NOT EXISTS user_privileges (
 db_exec(create_db)
 
 create_cache()
+
 
 --[[
 ###########################
@@ -172,7 +281,7 @@ local function check_name(name)
 end
 
 --- Search for records where the name is like param string
----@param name any
+---@param name string
 ---@return table ipairs
 --- Uses sql LIKE %name% to pattern match any
 --- string that contains name
@@ -371,6 +480,7 @@ sauth.auth_handler = {
 
 		-- Check param
 		assert(type(name) == 'string')
+		name = sanitize(name)
 
 		-- if an auth record is cached ensure
 		-- the owner is granted admin privs
@@ -386,9 +496,6 @@ sauth.auth_handler = {
 			end
 			return cache[name]
 		end
-
-		-- catch ' passed in name string to prevent crash
-		if name:find("%'") then return nil end
 
 		-- Assert caching on missing param
 		add_to_cache = add_to_cache or true
@@ -529,8 +636,8 @@ sauth.auth_handler = {
 	--- Reload database
 	---@param return boolean
 	reload = function()
-		-- deprecated due to the change in storage mechanism but maybe useful
-		-- for cache regeneration
+		cache = {}
+		create_cache()
 		return true
 	end,
 
