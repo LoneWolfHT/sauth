@@ -97,7 +97,7 @@ local function updater()
 	]])
 	db_exec(stmt)
 
-	local data, privs = {}
+	local data = {}
 	stmt = "SELECT id, privileges FROM auth_tmp;"
 	for row in db:nrows(stmt) do
 		data[#data+1] = row
@@ -106,7 +106,6 @@ local function updater()
 	local sb = {}
 	local hdr = true
 	local ftr = false
-	local s, msg
 
 	for i = 1, #data do
 		if hdr then
@@ -132,7 +131,7 @@ local function updater()
 		end
 		if #sb > 1000 then
 			ftr = true
-		end			
+		end
 	end
 	-- check for zero sb length!
 	if #sb > 0 then
