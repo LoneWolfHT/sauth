@@ -33,9 +33,6 @@ Caching comes at the expense of memory consumption. During server startup sauth 
 	sauth.cache_max = 500 -- default maximum number of memory cached entries on startup
 	sauth.cache_ttl = 86400 -- default seconds deducted from last login
 
-If you use player database you can keep the auth database clean of orphan entries using the shell script posted
-here https://forum.minetest.net/viewtopic.php?f=9&t=18604#p297350 by sofar.
-
 <b>Uninstalling</b>
 
-If/when you want to remove sauth and retain its auth data, simply rename your existing auth.sqlite, which becomes a stale backup from the moment a new record is created by sauth, then rename sauth.sqlite to auth.sqlite, it's as simple as that!
+If/when you want to remove sauth just delete the mod and minetest will default back to using the internal auth handler on the same db, it's as simple as that!
