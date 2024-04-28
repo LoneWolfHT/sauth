@@ -202,7 +202,8 @@ end
 ---@param str string
 ---@return sanitised string
 local function sanitize(str)
-	return str:gsub('[%p%c%s]', '')
+	str = str:gsub("%'", '')
+	return str:gsub('[%c%s]', '')
 end
 
 -- Define db tables
