@@ -290,7 +290,7 @@ end
 local function search(name)
 	local r = {}
 	q5:bind_values(name)
-	for row in q5:nrows(q) do
+	for row in q5:nrows() do
 		r[#r+1] = row.name
 	end
 	q5:reset()
@@ -302,7 +302,7 @@ end
 local function get_names()
 	local r = {}
 	q6:step()
-	for row in q6:nrows(q) do
+	for row in q6:nrows() do
 		r[row.name] = true
 	end
 	q6:reset()
@@ -636,14 +636,15 @@ sauth.auth_handler = {
 		-- Run revoke callbacks
 		for priv, _ in pairs(prev_privs) do
 			if privileges[priv] == nil then
-				core.run_priv_callbacks(name, priv, nil, "revoke")
+				minetest.run_priv_callbacks(name, priv, nil, "revoke")
 			end
 		end
 
 		-- Ensure owner has ability to grant
 		if name == owner then privileges.privs = true end
-		
+		-- Update cached privs
 		if cache[name] then cache[name].privileges = privileges end
+
 		minetest.notify_authentication_modified(name)
 	end,
 
