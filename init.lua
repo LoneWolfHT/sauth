@@ -199,14 +199,6 @@ local function trim_cache()
 	cap = cap - 1
 end
 
---- Sanitises the string param
----@param str string
----@return sanitised string
-local function sanitize(str)
-	str = str:gsub("%'", '')
-	return str:gsub('[%c%s]', '')
-end
-
 -- Define db tables
 local create_db = [[
 CREATE TABLE IF NOT EXISTS auth (
@@ -475,7 +467,7 @@ sauth.auth_handler = {
 
 		-- Check param
 		assert(type(name) == 'string')
-		local player = sanitize(name)
+		if name:find("%'") then return nil end
 
 		-- if an auth record is cached use it
 		-- ensure the owner is granted admin privs
@@ -670,7 +662,7 @@ sauth.auth_handler = {
 	---@return table ipairs
 	name_search = function(name)
 		assert(type(name) == 'string')
-		return search(sanitize(name))
+		return search(name)
 	end,
 
 	--- Return an iterator function for the auth table names
