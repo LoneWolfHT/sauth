@@ -471,24 +471,24 @@ sauth.auth_handler = {
 
 		-- if an auth record is cached use it
 		-- ensure the owner is granted admin privs
-		if cache[player] then
-			if not owner_privs_cached and player == owner then
+		if cache[name] then
+			if not owner_privs_cached and name == owner then
 				-- grant admin privs overlay
 				for priv, def in pairs(minetest.registered_privileges) do
 					if def.give_to_admin then
-						cache[player].privileges[priv] = true
+						cache[name].privileges[priv] = true
 					end
 				end
 				owner_privs_cached = true
 			end
-			return cache[player]
+			return cache[name]
 		end
 
 		-- Assert caching if param missing
 		add_to_cache = add_to_cache or true
 
 		-- Check db for matching record
-		local auth_entry = get_player_record(player)
+		local auth_entry = get_player_record(name)
 
 		-- Unknown name returns nil
 		if not auth_entry then return nil end
@@ -512,7 +512,7 @@ sauth.auth_handler = {
 			end
 
 		-- Grant owner all privileges
-		elseif player == owner then
+		elseif name == owner then
 			for priv, def in pairs(minetest.registered_privileges) do
 				if def.give_to_admin then
 					privileges[priv] = true
@@ -529,7 +529,7 @@ sauth.auth_handler = {
 		-- Conditionally retrieve record without caching
 		-- by passing false as the second param
 		if add_to_cache then
-			cache[player] = record
+			cache[name] = record
 			cap = cap + 1
 		end
 
