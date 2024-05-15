@@ -350,11 +350,14 @@ local s6 = db:prepare[[ INSERT INTO user_privileges (id,privilege) VALUES (?, ?)
 ---@param name string
 ---@param timestamp integer
 ---@return boolean
----@return string error message
+---@return sqlite status
 local function update_auth_login(name, timestamp)
-	s3:bind_values(timestamp, name)
-	s3:step()
-	return s3:finalize()
+	local result = s3:bind_values(timestamp, name)
+	if result == _sql.OK then
+		result = s3:step()
+	end
+	s3:reset()
+	return result
 end
 
 --- Update password for a player
@@ -363,9 +366,13 @@ end
 ---@return boolean
 ---@return string error message
 local function update_password(name, password)
-	s4:bind_values(password, name)
-	s4:step()
-	return s4:finalize()
+	local result = s4:bind_values(password, name)
+	if result == _sql.DONE then
+		s4:reset()
+		result = s4:step()
+	end
+	s4:reset()
+	return result
 end
 
 --- Update privileges for a player
@@ -376,18 +383,23 @@ end
 local function update_privileges(name, privs)
 	-- delete privs
 	local id = get_id(name)
-	s5:bind_values(id)
-	s5:step()
-	local r = s5:finalize()
-	if r == _sql.OK then
+	local result = s5:bind_values(id)
+	if result == _sql.OK then
+		result = s5:step()
+	end
+	if result == _sql.DONE then
 		for k,v in pairs(privs) do
-			s6:bind_values(id, k)
-			s6:step()
+			result = s6:bind_values(id, k)
+			if result == _sql.OK then
+				result = s6:step()
+			else
+				return result, db:errmsg()
+			end
 			s6:reset()
 		end
-		return s6:finalize()
+		return result
 	else
-		return r, db:errmsg()
+		return result, db:errmsg()
 	end
 end
 
@@ -404,9 +416,12 @@ local s7 = db:prepare[[ DELETE FROM auth WHERE name = ?; ]]
 ---@param name string
 ---@return sqlite return code
 local function del_record(name)
-	s7:bind_values(name)
-	s7:step()
-	return s7:finalize()
+	local result = s7:bind_values(name)
+	if result == _sql.OK then
+		result = s7:step()
+	end
+	s7:reset()
+	return result
 end
 
 
