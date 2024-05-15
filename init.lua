@@ -368,7 +368,6 @@ end
 local function update_password(name, password)
 	local result = s4:bind_values(password, name)
 	if result == _sql.DONE then
-		s4:reset()
 		result = s4:step()
 	end
 	s4:reset()
