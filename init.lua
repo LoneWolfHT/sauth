@@ -64,9 +64,37 @@ local function db_exec(stmt)
 	local r = db:exec(stmt)
 	if r ~= _sql.OK then
 		minetest.log("info", "[sauth] Sqlite ERROR:  ", db:errmsg())
-		return r, db:errmsg()
+		return false, db:errmsg()
 	end
-	return r
+	return true
+end
+
+--- Bind values to a prepared statement
+--- wrapping stmt:bind_values for error reporting
+---@param stmt string
+---@return boolean
+---@return string error message
+local function db_bind(stmt, ...)
+	stmt:reset()
+	local r = stmt:bind_values(...)
+	if r ~= _sql.OK then
+		minetest.log("info", "[sauth] Sqlite ERROR:  ", db:errmsg())
+		return false, db:errmsg()
+	end
+	return true
+end
+
+--- Step a prepared statement wrapping for error reporting
+---@param stmt object
+---@return boolean
+---@return string error message
+local function db_step(stmt)
+	local r = stmt:step()
+	if r ~= _sql.DONE then
+		minetest.log("info", "[sauth] Sqlite ERROR:  ", db:errmsg())
+		return false, db:errmsg()
+	end
+	return true
 end
 
 -- Alter table name, create new tables & copy data over
@@ -154,36 +182,6 @@ if update then updater() end
 -- Cache handling
 local cap = 0
 
---- Create cache when mod loads
-local function create_cache()
-	local q = "SELECT max(last_login) AS result FROM auth;"
-	local it, state = db:nrows(q)
-	local last = it(state)
-	if last and last.result then
-		last = last.result - ttl
-		q = ([[SELECT * FROM auth WHERE last_login > %s LIMIT %s;
-		]]):format(last, max_cache_records)
-		for row in db:nrows(q) do
-			cache[row.name] = {
-				id = row.id,
-				password = row.password,
-				privileges = {},
-				last_login = row.last_login
-			}
-			cap = cap + 1
-		end
-		for k,v in pairs(cache) do
-			q = ("SELECT * FROM user_privileges WHERE id = %i;"):format(v.id)
-			local r = {}
-			for row in db:nrows(q) do
-				r[row.privilege] = true
-			end
-			cache[k].privileges = r
-		end
-	end
-	minetest.log("action", "[sauth] caching " .. cap .. " records.")
-end
-
 --- Remove oldest entry in the cache
 local function trim_cache()
 	if cap < max_cache_records then return end
@@ -214,8 +212,6 @@ CREATE TABLE IF NOT EXISTS user_privileges (
 ]]
 db_exec(create_db)
 
-create_cache()
-
 
 --[[
 ###########################
@@ -234,44 +230,48 @@ local q6 = db:prepare[[ SELECT name FROM auth; ]]
 ---@param name string
 ---@return keypair table
 local function get_auth_record(name)
-	q1:bind_values(name)
-	local it, state = q1:nrows()
-	q1:reset()
-	return it(state)
+	if db_bind(q1, name) then
+		local it, state = q1:nrows()
+		return it(state)
+	end
+	return nil
 end
 
 --- Get privileges from user_privileges table for id
 ---@param id integer
 ---@return keypairs table or nil
 local function get_privs(id)
-	q2:bind_values(id)
-	local r = {}
-	for row in q2:nrows() do
-		r[row.privilege] = true
+	if db_bind(q2, id) then
+		local r = {}
+		for row in q2:nrows() do
+			r[row.privilege] = true
+		end
+		return r
 	end
-	q2:reset()
-	return r
+	return nil
 end
 
 --- Get id from player name
 ---@param name string
 ---@return id integer or nil
 local function get_id(name)
-	q3:bind_values(name)
-	local it, state = q3:nrows()
-	local row = it(state)
-	q3:reset()
-	return row.id
+	if db_bind(q3, name) then
+		local it, state = q3:nrows()
+		local row = it(state)
+		return row.id
+	end
+	return nil
 end
 
 --- Check db for matching name
 ---@param name string
 ---@return table or nil
 local function check_name(name)
-	q4:bind_values(name)
-	local it, state = q4:nrows()
-	q4:reset()
-	return it(state)
+	if db_bind(q4, name) then
+		local it, state = q4:nrows()
+		return it(state)
+	end
+	return nil
 end
 
 --- Search for records where the name is like param string
@@ -281,24 +281,26 @@ end
 --- string that contains name
 local function search(name)
 	local r = {}
-	q5:bind_values(name)
-	for row in q5:nrows() do
-		r[#r+1] = row.name
+	if db_bind(q5, name) then
+		for row in q5:nrows() do
+			r[#r+1] = row.name
+		end
+		return r
 	end
-	q5:reset()
-	return r
+	return nil
 end
 
 --- Get pairs table of names in the database
 ---@return table
 local function get_names()
 	local r = {}
-	q6:step()
-	for row in q6:nrows() do
-		r[row.name] = true
+	if db_step(q6) then
+		for row in q6:nrows() do
+			r[row.name] = true
+		end
+		return r
 	end
-	q6:reset()
-	return r
+	return nil
 end
 
 
@@ -319,18 +321,21 @@ local s2 = db:prepare[[ INSERT INTO user_privileges (id,privilege) VALUES (?, ?)
 ---@return boolean
 ---@return string error message
 local function add_player_record(name, password, privs, last_login)
-	local r = s1:bind_values(name, password, last_login)
-	if r == _sql.OK and s1:step() == _sql.DONE then
+	local r, e = db_bind(s1, name, password, last_login)
+	if r then
+		r, e = db_step(s1)
 		-- add privileges
 		local id = db:last_insert_rowid()
 		for k,v in pairs(privs) do
-			s2:bind_values(id, k)
-			s2:step()
-			s2:reset()
+			if db_bind(s2, id, k) then
+				r = db_step(s2)
+			else
+				return r, e
+			end
 		end
 		return r
 	else
-		return r, db:errmsg()
+		return r, e
 	end
 end
 
@@ -352,12 +357,10 @@ local s6 = db:prepare[[ INSERT INTO user_privileges (id,privilege) VALUES (?, ?)
 ---@return boolean
 ---@return sqlite status
 local function update_auth_login(name, timestamp)
-	local result = s3:bind_values(timestamp, name)
-	if result == _sql.OK then
-		result = s3:step()
+	if db_bind(s3, timestamp, name) then
+		return db_step(s3)
 	end
-	s3:reset()
-	return result
+	return nil
 end
 
 --- Update password for a player
@@ -366,12 +369,10 @@ end
 ---@return boolean
 ---@return string error message
 local function update_password(name, password)
-	local result = s4:bind_values(password, name)
-	if result == _sql.DONE then
-		result = s4:step()
+	if db_bind(s4, password, name) then
+		return db_step(s4)
 	end
-	s4:reset()
-	return result
+	return nil
 end
 
 --- Update privileges for a player
@@ -382,23 +383,22 @@ end
 local function update_privileges(name, privs)
 	-- delete privs
 	local id = get_id(name)
-	local result = s5:bind_values(id)
-	if result == _sql.OK then
-		result = s5:step()
+	local result, err = db_bind(s5, id)
+	if result then
+		result, err = db_step(s5)
 	end
-	if result == _sql.DONE then
+	if result then
 		for k,v in pairs(privs) do
-			result = s6:bind_values(id, k)
-			if result == _sql.OK then
-				result = s6:step()
+			result, err = db_bind(s6, id, k)
+			if result then
+				result, err = db_step(s6)
 			else
-				return result, db:errmsg()
+				return result, err
 			end
-			s6:reset()
 		end
 		return result
 	else
-		return result, db:errmsg()
+		return result, err
 	end
 end
 
@@ -415,12 +415,10 @@ local s7 = db:prepare[[ DELETE FROM auth WHERE name = ?; ]]
 ---@param name string
 ---@return sqlite return code
 local function del_record(name)
-	local result = s7:bind_values(name)
-	if result == _sql.OK then
-		result = s7:step()
+	if db_bind(s7, name) then
+		return db_step(s7)
 	end
-	s7:reset()
-	return result
+	return nil
 end
 
 
@@ -462,6 +460,37 @@ local function update_login(name)
 	end
 	return update_auth_login(name, ts)
 end
+
+--- Create cache when mod loads
+local function create_cache()
+	local q = "SELECT max(last_login) AS result FROM auth;"
+	local it, state = db:nrows(q)
+	local last = it(state)
+	if last and last.result then
+		last = last.result - ttl
+		q = ([[SELECT * FROM auth WHERE last_login > %s LIMIT %s;
+		]]):format(last, max_cache_records)
+		for row in db:nrows(q) do
+			cache[row.name] = {
+				id = row.id,
+				password = row.password,
+				privileges = {},
+				last_login = row.last_login
+			}
+			cap = cap + 1
+		end
+		for k,v in pairs(cache) do
+			q = ("SELECT * FROM user_privileges WHERE id = %i;"):format(v.id)
+			local r = {}
+			for row in db:nrows(q) do
+				r[row.privilege] = true
+			end
+			cache[k].privileges = r
+		end
+	end
+	minetest.log("action", "[sauth] caching " .. cap .. " records.")
+end
+create_cache()
 
 
 --[[
@@ -560,7 +589,7 @@ sauth.auth_handler = {
 		minetest.log('info', "[sauth] authentification handler adding player '"..name.."'")
 		local privs = minetest.string_to_privs(minetest.settings:get("default_privs"))
 		local res, err = add_player_record(name,password,privs,-1)
-		if res == _sql.OK then
+		if res then
 			cache[name] = {
 				password = password,
 				privileges = privs,
@@ -576,15 +605,15 @@ sauth.auth_handler = {
 	delete_auth = function(name)
 		assert(type(name) == 'string')
 		local record = get_record(name)
-		local res = false
+		local res, err
 		if record then
 			minetest.log('info', "[sauth] authentification handler deleting player '"..name.."'")
-			res = del_record(name)
-			if res == _sql.OK then
+			res, err = del_record(name)
+			if res then
 				cache[name] = nil
 			end
 		end
-		return res
+		return res, err
 	end,
 
 	--- Set password for an auth record
@@ -700,9 +729,14 @@ minetest.register_authentication_handler(sauth.auth_handler)
 -- Log event as minetest registers silently
 minetest.log('action', "[sauth] registered as the authentication handler!")
 
+local join_cache = {}
+
 minetest.register_on_prejoinplayer(function(name, ip)
 	local r = get_record(name)
-	if r ~= nil then return	end
+	if r then
+		join_cache[name] = r
+		return
+	end
 	-- Check name isn't registered
 	local chk = check_name(name)
 	if chk then
@@ -715,9 +749,10 @@ end)
 
 minetest.register_on_joinplayer(function(player)
 	local name = player:get_player_name()
-	local r = get_record(name)
-	if r == _sql.OK then sauth.auth_handler.record_login(name) end
+	local r = join_cache[name]
+	if r then sauth.auth_handler.record_login(name) end
 	trim_cache()
+	join_cache[name] = {}
 end)
 
 minetest.register_on_shutdown(function()
