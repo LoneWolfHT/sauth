@@ -27,6 +27,7 @@ local _sql = ie.require("lsqlite3")
 if sqlite3 then sqlite3 = nil end
 
 local singleplayer = minetest.is_singleplayer()
+local cap = 0 -- cache max
 
 -- Use conf setting to determine handler for singleplayer
 if not minetest.settings:get_bool(MN .. '.enable_singleplayer')
@@ -178,24 +179,6 @@ local function updater()
 end
 -- Update database check
 if update then updater() end
-
--- Cache handling
-local cap = 0
-
---- Remove oldest entry in the cache
-local function trim_cache()
-	if cap < max_cache_records then return end
-	local entry = os.time()
-	local name
-	for k, v in pairs(cache) do
-		if v.last_login < entry then
-			entry = v.last_login
-			name = k
-		end
-	end
-	cache[name] = nil
-	cap = cap - 1
-end
 
 -- Define db tables
 local create_db = [[
@@ -493,6 +476,21 @@ local function create_cache()
 end
 create_cache()
 
+--- Remove oldest entry in the cache
+local function trim_cache()
+	if cap < max_cache_records then return end
+	local entry = os.time()
+	local name
+	for k, v in pairs(cache) do
+		if v.last_login < entry then
+			entry = v.last_login
+			name = k
+		end
+	end
+	cache[name] = nil
+	cap = cap - 1
+end
+
 
 --[[
 ######################
@@ -753,7 +751,7 @@ minetest.register_on_joinplayer(function(player)
 	local r = join_cache[name]
 	if r then sauth.auth_handler.record_login(name) end
 	trim_cache()
-	join_cache[name] = {}
+	join_cache = {} -- clean up
 end)
 
 minetest.register_on_shutdown(function()
