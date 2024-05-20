@@ -62,7 +62,7 @@ local db = _sql.open(WP.."/auth.sqlite") -- connection
 ---@return string error message
 local function db_exec(stmt)
 	if db:exec(stmt) ~= _sql.OK then
-		minetest.log("info", "Sqlite ERROR:  ", db:errmsg())
+		minetest.log("info", "Sqlite ERROR:  "..db:errmsg())
 		return false, db:errmsg()
 	end
 	return true
