@@ -63,7 +63,7 @@ local db = _sql.open(WP.."/auth.sqlite") -- connection
 local function db_exec(stmt)
 	local r = db:exec(stmt)
 	if r ~= _sql.OK then
-		minetest.log("info", "[sauth] Sqlite ERROR:  ", db:errmsg())
+		minetest.log("info", "[sauth] Sqlite ERROR:  "..db:errmsg())
 		return false, db:errmsg()
 	end
 	return true
@@ -78,7 +78,7 @@ local function db_bind(stmt, ...)
 	stmt:reset()
 	local r = stmt:bind_values(...)
 	if r ~= _sql.OK then
-		minetest.log("info", "[sauth] Sqlite ERROR:  ", db:errmsg())
+		minetest.log("info", "[sauth] Sqlite ERROR:  "..db:errmsg())
 		return false, db:errmsg()
 	end
 	return true
@@ -91,7 +91,7 @@ end
 local function db_step(stmt)
 	local r = stmt:step()
 	if r ~= _sql.DONE then
-		minetest.log("info", "[sauth] Sqlite ERROR:  ", db:errmsg())
+		minetest.log("info", "[sauth] Sqlite ERROR:  "..db:errmsg())
 		return false, db:errmsg()
 	end
 	return true
@@ -174,7 +174,7 @@ local function updater()
 	end
 	stmt = table.concat(sb, "\n")
 	db_exec(stmt)
-	minetest.log('action', "sauth db was converted and renamed to minetest auth.sqlite!")
+	minetest.log('action', "sauth.sqlite was renamed to auth.sqlite and converted!")
 end
 -- Update database check
 if update then updater() end
@@ -328,7 +328,7 @@ local function add_player_record(name, password, privs, last_login)
 		local id = db:last_insert_rowid()
 		for k,v in pairs(privs) do
 			if db_bind(s2, id, k) then
-				r = db_step(s2)
+				r, e = db_step(s2)
 			else
 				return r, e
 			end
@@ -383,22 +383,23 @@ end
 local function update_privileges(name, privs)
 	-- delete privs
 	local id = get_id(name)
-	local result, err = db_bind(s5, id)
-	if result then
-		result, err = db_step(s5)
+	local r, e = db_bind(s5, id)
+	if r then
+		r, e = db_step(s5)
 	end
-	if result then
+	if r then
 		for k,v in pairs(privs) do
-			result, err = db_bind(s6, id, k)
-			if result then
-				result, err = db_step(s6)
+			r, e = db_bind(s6, id, k)
+			if r then
+				r, e = db_step(s6)
 			else
-				return result, err
+				return r, e
 			end
+			if not r then return r, e end
 		end
-		return result
+		return r
 	else
-		return result, err
+		return r, e
 	end
 end
 
